@@ -1,22 +1,9 @@
 /* Refined admin control and recovery helpers added.
    All original functionality preserved; added:
-   - runtime error handlers to surface exceptions
-   - defensive checks before using canvas/getContext
-   - a few console.log calls to help trace execution
+   - recoverAdminPass() : shows or resets adminPass to "admin123" if missing
+   - showStoredAdminPass() : visible only in adminPanel, shows the current stored admin password
+   - adminLogin() now ensures default adminPass exists and saves it if missing
 */
-
-(function(){
-  // Global error reporting to surface issues during debugging
-  window.addEventListener('error', function(e){
-    console.error('Window error:', e.message, e.error);
-    // keep UI non-intrusive but notify user once
-    // alert('JS error: ' + e.message);
-  });
-  window.addEventListener('unhandledrejection', function(e){
-    console.error('Unhandled promise rejection:', e.reason);
-    // alert('Unhandled promise rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
-  });
-})();
 
 let currentUser = null;
 let currentBoard = null;
@@ -37,7 +24,6 @@ const DEFAULT_BOARDS = {
 };
 
 function goTo(id){
-  console.log('goTo', id);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const page = document.getElementById(id);
   if(page) page.classList.add('active');
@@ -55,7 +41,7 @@ function showInfo(){
 Now here's how it works:
 1. Your login username & password MUST be remembered. This is the only way to keep track. Don't worry, no personal info is asked. All safe unless you share your password.
 2. Unlock admin mode to access extra functions. Original password: admin123. Feel free to change it.
-3. Data only saves per device; this is not online, so sharing is limited. (I haven't tested this part yet)
+3. Data only saves per device; this is not online, so sharing is limited.(I haven't tested this part yet)
 4. In the boards, you can write about anything you want. I suggest using the board as a prompt for inspiration. For example, if the board is "proud", write about your achievements.
 5. When you delete a board, there is no going back. Be careful of what you delete!
 
@@ -96,7 +82,6 @@ function login(){
 
   // ensure boardTitles and default boards exist
   let dataNow = JSON.parse(localStorage.getItem(currentUser));
-  if(!dataNow) dataNow = {};
   if(!dataNow.boardTitles){
     dataNow.boardTitles = {};
     Object.keys(DEFAULT_BOARDS).forEach(k=>dataNow.boardTitles[k]=DEFAULT_BOARDS[k]);
@@ -118,9 +103,8 @@ function login(){
 function selectMood(m){
   currentMood=m;
   const grid=document.getElementById('emotionGrid');
-  if(!grid) return console.warn('emotionGrid not found');
   grid.innerHTML="";
-  (emotions[m]||[]).forEach(e=>{
+  emotions[m].forEach(e=>{
     const b=document.createElement("button");
     b.textContent=e;
     b.className=m==="highPositive"?"hp":m==="lowPositive"?"lp":m==="highNegative"?"hn":"ln";
@@ -133,7 +117,6 @@ function selectMood(m){
 function saveEmotion(e){
   const d=JSON.parse(localStorage.getItem(currentUser));
   if(!d) return alert("Please log in first");
-  d.emotions = d.emotions || [];
   d.emotions.push({emotion:e,mood:currentMood,date:new Date().toISOString()});
   localStorage.setItem(currentUser,JSON.stringify(d));
   goTo('boards');
@@ -143,11 +126,9 @@ function saveEmotion(e){
 
 // Render the grid of boards (the main boards page)
 function renderBoardsGrid(){
-  console.log('renderBoardsGrid currentUser=', currentUser);
-  const grid = document.getElementById('boardsGrid');
-  if(!grid) return console.warn('boardsGrid not present');
   if(!currentUser) {
     // if not logged in, show the original static four buttons to preserve UX
+    const grid = document.getElementById('boardsGrid');
     grid.innerHTML = "";
     Object.keys(DEFAULT_BOARDS).forEach(k=>{
       const btn = document.createElement('button');
@@ -170,6 +151,7 @@ function renderBoardsGrid(){
   });
   localStorage.setItem(currentUser, JSON.stringify(d));
 
+  const grid = document.getElementById('boardsGrid');
   grid.innerHTML = "";
   const keys = Object.keys(d.boardTitles);
 
@@ -188,10 +170,8 @@ function renderBoardsGrid(){
 
 // Render board manage list (Manage Boards page)
 function renderBoardList(){
-  const list = document.getElementById('boardList');
-  if(!list) return console.warn('boardList not present');
   if(!currentUser) {
-    list.innerHTML = "<p>Please log in first to manage boards.</p>";
+    document.getElementById('boardList').innerHTML = "<p>Please log in first to manage boards.</p>";
     return;
   }
 
@@ -207,6 +187,7 @@ function renderBoardList(){
   });
   localStorage.setItem(currentUser, JSON.stringify(d));
 
+  const list = document.getElementById('boardList');
   list.innerHTML = "";
   const keys = Object.keys(d.boardTitles);
 
@@ -270,7 +251,7 @@ function addBoard(){
   if(!currentUser) return alert("Please login first");
   const title = document.getElementById('newBoardTitle').value;
   if(!title || !title.trim()) return alert("Provide a board title");
-  const d = JSON.parse(localStorage.getItem(currentUser)) || {};
+  const d = JSON.parse(localStorage.getItem(currentUser));
   // create slug key from title
   let keyBase = title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   let key = keyBase || ('board-' + Date.now());
@@ -284,8 +265,7 @@ function addBoard(){
   d.boards[key] = [];
   d.boardTitles[key] = title.trim();
   localStorage.setItem(currentUser, JSON.stringify(d));
-  const el = document.getElementById('newBoardTitle');
-  if(el) el.value = "";
+  document.getElementById('newBoardTitle').value = "";
   // update both pages
   renderBoardList();
   renderBoardsGrid();
@@ -299,8 +279,7 @@ function renameBoard(key, newTitle){
   localStorage.setItem(currentUser, JSON.stringify(d));
   // if the currentBoard is this, update the boardTitle DOM
   if(currentBoard === key){
-    const bt = document.getElementById('boardTitle');
-    if(bt) bt.textContent = newTitle;
+    document.getElementById('boardTitle').textContent = newTitle;
   }
   renderBoardList();
   renderBoardsGrid();
@@ -335,20 +314,17 @@ function openBoard(b){
   currentBoard=b;
   const d = JSON.parse(localStorage.getItem(currentUser)) || {};
   const title = (d.boardTitles && d.boardTitles[b]) ? d.boardTitles[b] : b;
-  const bt = document.getElementById('boardTitle');
-  if(bt) bt.textContent = title;
+  document.getElementById('boardTitle').textContent = title;
   applyLock();
   loadPosts();
   goTo('boardPage');
 }
 
 function applyLock(){
-  const d=JSON.parse(localStorage.getItem(currentUser)) || {};
+  const d=JSON.parse(localStorage.getItem(currentUser));
   const locked=d && d.locks ? d.locks[currentBoard] : null;
-  const input = document.getElementById('boardInput');
-  const posts = document.getElementById('posts');
-  if(input) input.style.display=locked?"none":"block";
-  if(posts) posts.innerHTML=locked?"<p>🔒 This board is locked.</p>":"";
+  document.getElementById('boardInput').style.display=locked?"none":"block";
+  document.getElementById('posts').innerHTML=locked?"<p>🔒 This board is locked.</p>":"";
 }
 
 function toggleLock(){
@@ -369,23 +345,20 @@ function toggleLock(){
 }
 
 function savePost(){
-  const input = document.getElementById('boardInput');
-  if(!input) return;
-  const t=input.value;
+  const t=document.getElementById('boardInput').value;
   if(!t) return;
   const d=JSON.parse(localStorage.getItem(currentUser));
-  if(!d.boards) d.boards = {};
   if(!d.boards[currentBoard]) d.boards[currentBoard]=[];
   d.boards[currentBoard].push({text:t,time:new Date().toLocaleString()});
   localStorage.setItem(currentUser,JSON.stringify(d));
-  input.value="";
+  document.getElementById('boardInput').value="";
   loadPosts();
 }
 
 function loadPosts(){
   const d=JSON.parse(localStorage.getItem(currentUser));
   const div=document.getElementById('posts');
-  if(!d || !div) return;
+  if(!d) return;
   if(d.locks && d.locks[currentBoard]) return;
   div.innerHTML="";
   (d.boards[currentBoard]||[]).forEach(p=>{
@@ -412,163 +385,143 @@ function escapeHtml(str){
 // CHARTS & HISTORY
 
 function drawCharts(){
-  if(!currentUser) return console.warn('drawCharts: no currentUser');
+  if(!currentUser) return;
   const d=JSON.parse(localStorage.getItem(currentUser));
-  if(!d) return console.warn('drawCharts: no data for user');
+  if(!d) return;
 
   // emotionChart (pie)
-  const emotionCanvas = document.getElementById("emotionChart");
-  if(emotionCanvas && emotionCanvas.getContext){
-    const ctx = emotionCanvas.getContext("2d");
-    if(ctx){
-      const counts={highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
-      (d.emotions||[]).forEach(e=>counts[e.mood]++);
-      let total=Object.values(counts).reduce((a,b)=>a+b,0);
-      ctx.clearRect(0,0,emotionCanvas.width,emotionCanvas.height);
-      if(total === 0){
-        ctx.fillStyle = "#fff";
-        ctx.font = "14px Arial";
-        ctx.fillText("No emotions logged", emotionCanvas.width/2 - 50, emotionCanvas.height/2);
-      } else {
-        let start= -Math.PI/2;
-        const colors={highPositive:"#eee993",lowPositive:"#a0d39a",highNegative:"#a45c5c",lowNegative:"#85acd1"};
-        Object.keys(counts).forEach(k=>{
-          const slice=(counts[k]/total)*Math.PI*2;
-          ctx.beginPath();
-          ctx.moveTo(emotionCanvas.width/2,emotionCanvas.height/2);
-          ctx.arc(emotionCanvas.width/2,emotionCanvas.height/2, Math.min(emotionCanvas.width, emotionCanvas.height)/2 - 30, start, start+slice);
-          ctx.fillStyle=colors[k];
-          ctx.fill();
-          start+=slice;
-        });
-      }
-    }
+  const ctx=document.getElementById("emotionChart").getContext("2d");
+  const counts={highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
+  (d.emotions||[]).forEach(e=>counts[e.mood]++);
+  let total=Object.values(counts).reduce((a,b)=>a+b,0);
+  ctx.clearRect(0,0,300,300);
+  if(total === 0){
+    ctx.fillStyle = "#fff";
+    ctx.font = "14px Arial";
+    ctx.fillText("No emotions logged", 90,150);
   } else {
-    console.warn('drawCharts: emotionChart canvas not found');
+    let start= -Math.PI/2;
+    const colors={highPositive:"#eee993",lowPositive:"#a0d39a",highNegative:"#a45c5c",lowNegative:"#85acd1"};
+    Object.keys(counts).forEach(k=>{
+      const slice=(counts[k]/total)*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(150,150);
+      ctx.arc(150,150,120,start,start+slice);
+      ctx.fillStyle=colors[k];
+      ctx.fill();
+      start+=slice;
+    });
   }
 
   // weeklyChart (weekday stacked-ish)
-  const weeklyCanvas = document.getElementById("weeklyChart");
-  if(weeklyCanvas && weeklyCanvas.getContext){
-    const wCtx = weeklyCanvas.getContext("2d");
-    if(wCtx){
-      const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const weekly={highPositive:[],lowPositive:[],highNegative:[],lowNegative:[]};
-      days.forEach(()=>{weekly.highPositive.push(0);weekly.lowPositive.push(0);weekly.highNegative.push(0);weekly.lowNegative.push(0);});
-      (d.emotions||[]).forEach(e=>{
-        const day=new Date(e.date).getDay();
-        if(weekly[e.mood]) weekly[e.mood][day]++;
-      });
-      wCtx.clearRect(0,0,weeklyCanvas.width,weeklyCanvas.height);
-      const colors={highPositive:"#eee993",lowPositive:"#a0d39a",highNegative:"#a45c5c",lowNegative:"#85acd1"};
-      const barGroupWidth = 28;
-      days.forEach((day,i)=>{
-        let x = i * (barGroupWidth + 10) + 10;
-        let yOffset = weeklyCanvas.height - 20;
-        Object.keys(weekly).forEach(k=>{
-          const h = weekly[k][i] * 6; // scale factor
-          wCtx.fillStyle = colors[k];
-          wCtx.fillRect(x, yOffset - h, barGroupWidth, h);
-          yOffset -= h;
-        });
-        wCtx.fillStyle = "#fff";
-        wCtx.font = "10px Arial";
-        wCtx.fillText(day, x+2, weeklyCanvas.height - 5);
-      });
-    }
-  } else {
-    console.warn('drawCharts: weeklyChart canvas not found');
-  }
+  const wCtx=document.getElementById("weeklyChart").getContext("2d");
+  const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const weekly={highPositive:[],lowPositive:[],highNegative:[],lowNegative:[]};
+  days.forEach(()=>{weekly.highPositive.push(0);weekly.lowPositive.push(0);weekly.highNegative.push(0);weekly.lowNegative.push(0);});
+  (d.emotions||[]).forEach(e=>{
+    const day=new Date(e.date).getDay();
+    weekly[e.mood][day]++;
+  });
+  wCtx.clearRect(0,0,300,200);
+  const colors={highPositive:"#eee993",lowPositive:"#a0d39a",highNegative:"#a45c5c",lowNegative:"#85acd1"};
+  const barGroupWidth = 28;
+  days.forEach((day,i)=>{
+    let x = i * (barGroupWidth + 10) + 10;
+    let yOffset = 180;
+    Object.keys(weekly).forEach(k=>{
+      const h = weekly[k][i] * 6; // scale factor
+      wCtx.fillStyle = colors[k];
+      wCtx.fillRect(x, yOffset - h, barGroupWidth, h);
+      yOffset -= h;
+    });
+    wCtx.fillStyle = "#fff";
+    wCtx.font = "10px Arial";
+    wCtx.fillText(day, x+2, 195);
+  });
+
 
   // monthlyChart: grouped comparison This Month vs Previous Month per mood (4 mood groups)
-  const monthlyCanvas = document.getElementById("monthlyChart");
-  if(monthlyCanvas && monthlyCanvas.getContext){
-    const mCtx = monthlyCanvas.getContext("2d");
-    if(mCtx){
-      mCtx.clearRect(0,0,monthlyCanvas.width,monthlyCanvas.height);
-      // compute date boundaries
-      const now = new Date();
-      const endThis = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1); // exclusive
-      const startThis = new Date(endThis);
-      startThis.setDate(endThis.getDate() - 30);
-      const startPrev = new Date(startThis);
-      startPrev.setDate(startThis.getDate() - 30);
-      const endPrev = new Date(startThis);
+  const mCtx = document.getElementById("monthlyChart").getContext("2d");
+  mCtx.clearRect(0,0,500,300);
+  // compute date boundaries
+  const now = new Date();
+  const endThis = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1); // exclusive
+  const startThis = new Date(endThis);
+  startThis.setDate(endThis.getDate() - 30);
+  const startPrev = new Date(startThis);
+  startPrev.setDate(startThis.getDate() - 30);
+  const endPrev = new Date(startThis);
 
-      const moods = ["highPositive","lowPositive","highNegative","lowNegative"];
-      const countsThis = {highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
-      const countsPrev = {highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
+  const moods = ["highPositive","lowPositive","highNegative","lowNegative"];
+  const countsThis = {highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
+  const countsPrev = {highPositive:0,lowPositive:0,highNegative:0,lowNegative:0};
 
-      (d.emotions || []).forEach(e=>{
-        const dt = new Date(e.date);
-        if(dt >= startThis && dt < endThis){
-          countsThis[e.mood] = (countsThis[e.mood] || 0) + 1;
-        } else if(dt >= startPrev && dt < endPrev){
-          countsPrev[e.mood] = (countsPrev[e.mood] || 0) + 1;
-        }
-      });
-
-      // draw axes & labels
-      const chartLeft = 50;
-      const chartTop = 20;
-      const chartWidth = monthlyCanvas.width - chartLeft - 20;
-      const chartHeight = monthlyCanvas.height - chartTop - 60;
-
-      // determine max value for scaling
-      const maxCount = Math.max(...Object.values(countsThis), ...Object.values(countsPrev), 1);
-
-      // y axis lines
-      mCtx.strokeStyle = "#3a3a3a";
-      mCtx.fillStyle = "#fff";
-      mCtx.font = "12px Arial";
-      for(let i=0;i<=5;i++){
-        const y = chartTop + i * (chartHeight/5);
-        mCtx.beginPath();
-        mCtx.moveTo(chartLeft, y);
-        mCtx.lineTo(chartLeft + chartWidth, y);
-        mCtx.stroke();
-        // label
-        const labelVal = Math.round(maxCount * (1 - i/5));
-        mCtx.fillText(labelVal, 10, y+4);
-      }
-
-      // draw grouped bars: for each mood, draw two bars (prev, this)
-      const groupCount = moods.length;
-      const groupSpacing = chartWidth / groupCount;
-      const barWidth = Math.min(40, groupSpacing * 0.28);
-      moods.forEach((mood, idx) => {
-        const groupX = chartLeft + idx * groupSpacing + groupSpacing/4;
-        // previous month bar (left)
-        const valPrev = countsPrev[mood] || 0;
-        const hPrev = (valPrev / maxCount) * chartHeight;
-        mCtx.fillStyle = "#888888";
-        mCtx.fillRect(groupX, chartTop + (chartHeight - hPrev), barWidth, hPrev);
-        // this month bar (right)
-        const valThis = countsThis[mood] || 0;
-        const hThis = (valThis / maxCount) * chartHeight;
-        mCtx.fillStyle = (mood === "highPositive")?"#eee993":(mood==="lowPositive")?"#a0d39a":(mood==="highNegative")?"#a45c5c":"#85acd1";
-        mCtx.fillRect(groupX + barWidth + 6, chartTop + (chartHeight - hThis), barWidth, hThis);
-
-        // labels under group
-        mCtx.fillStyle = "#fff";
-        mCtx.font = "12px Arial";
-        mCtx.fillText(prettyMood(mood), groupX, chartTop + chartHeight + 18);
-      });
-
-      // legend
-      mCtx.fillStyle = "#fff";
-      mCtx.font = "12px Arial";
-      mCtx.fillText("Previous 30d", chartLeft + chartWidth - 120, chartTop + 12);
-      mCtx.fillStyle = "#888888";
-      mCtx.fillRect(chartLeft + chartWidth - 150, chartTop + 5, 12, 12);
-      mCtx.fillStyle = "#fff";
-      mCtx.fillText("This 30d", chartLeft + chartWidth - 60, chartTop + 12);
-      mCtx.fillStyle = "#eee993";
-      mCtx.fillRect(chartLeft + chartWidth - 70, chartTop + 5, 12, 12);
+  (d.emotions || []).forEach(e=>{
+    const dt = new Date(e.date);
+    if(dt >= startThis && dt < endThis){
+      countsThis[e.mood] = (countsThis[e.mood] || 0) + 1;
+    } else if(dt >= startPrev && dt < endPrev){
+      countsPrev[e.mood] = (countsPrev[e.mood] || 0) + 1;
     }
-  } else {
-    console.warn('drawCharts: monthlyChart canvas not found');
+  });
+
+  // draw axes & labels
+  const chartLeft = 50;
+  const chartTop = 20;
+  const chartWidth = 420;
+  const chartHeight = 240;
+
+  // determine max value for scaling
+  const maxCount = Math.max(...Object.values(countsThis), ...Object.values(countsPrev), 1);
+
+  // y axis lines
+  mCtx.strokeStyle = "#3a3a3a";
+  mCtx.fillStyle = "#fff";
+  mCtx.font = "12px Arial";
+  for(let i=0;i<=5;i++){
+    const y = chartTop + i * (chartHeight/5);
+    mCtx.beginPath();
+    mCtx.moveTo(chartLeft, y);
+    mCtx.lineTo(chartLeft + chartWidth, y);
+    mCtx.stroke();
+    // label
+    const labelVal = Math.round(maxCount * (1 - i/5));
+    mCtx.fillText(labelVal, 10, y+4);
   }
+
+  // draw grouped bars: for each mood, draw two bars (prev, this)
+  const groupCount = moods.length;
+  const groupSpacing = chartWidth / groupCount;
+  const barWidth = Math.min(40, groupSpacing * 0.28);
+  moods.forEach((mood, idx) => {
+    const groupX = chartLeft + idx * groupSpacing + groupSpacing/4;
+    // previous month bar (left)
+    const valPrev = countsPrev[mood] || 0;
+    const hPrev = (valPrev / maxCount) * chartHeight;
+    mCtx.fillStyle = "#888888";
+    mCtx.fillRect(groupX, chartTop + (chartHeight - hPrev), barWidth, hPrev);
+    // this month bar (right)
+    const valThis = countsThis[mood] || 0;
+    const hThis = (valThis / maxCount) * chartHeight;
+    mCtx.fillStyle = (mood === "highPositive")?"#eee993":(mood==="lowPositive")?"#a0d39a":(mood==="highNegative")?"#a45c5c":"#85acd1";
+    mCtx.fillRect(groupX + barWidth + 6, chartTop + (chartHeight - hThis), barWidth, hThis);
+
+    // labels under group
+    mCtx.fillStyle = "#fff";
+    mCtx.font = "12px Arial";
+    mCtx.fillText(prettyMood(mood), groupX, chartTop + chartHeight + 18);
+  });
+
+  // legend
+  mCtx.fillStyle = "#fff";
+  mCtx.font = "12px Arial";
+  mCtx.fillText("Previous 30d", chartLeft + chartWidth - 120, chartTop + 12);
+  mCtx.fillStyle = "#888888";
+  mCtx.fillRect(chartLeft + chartWidth - 150, chartTop + 5, 12, 12);
+  mCtx.fillStyle = "#fff";
+  mCtx.fillText("This 30d", chartLeft + chartWidth - 60, chartTop + 12);
+  mCtx.fillStyle = "#eee993";
+  mCtx.fillRect(chartLeft + chartWidth - 70, chartTop + 5, 12, 12);
 }
 
 function prettyMood(m){
@@ -581,7 +534,6 @@ function prettyMood(m){
 function buildCalendar(){
   const d=JSON.parse(localStorage.getItem(currentUser));
   const grid=document.getElementById("calendarGrid");
-  if(!grid) return;
   grid.innerHTML="";
   if(!d || !d.emotions || d.emotions.length === 0){
     grid.innerHTML = "<p>No emotion entries yet.</p>";
@@ -633,8 +585,7 @@ function adminLogin(){
   const saved = d.adminPass;
 
   if(p===saved){
-    const panel = document.getElementById("adminPanel");
-    if(panel) panel.classList.remove("hidden");
+    document.getElementById("adminPanel").classList.remove("hidden");
     alert("Admin unlocked.");
   } else {
     alert("Wrong admin password");
@@ -657,23 +608,13 @@ function resetData(){
     localStorage.clear();
     alert("All local data cleared.");
     // hide admin panel if shown
-    const panel = document.getElementById("adminPanel");
-    if(panel) panel.classList.add("hidden");
-    // reset in-memory pointers
-    currentUser = null;
-    currentBoard = null;
-    currentMood = null;
-    renderBoardsGrid();
+    document.getElementById("adminPanel").classList.add("hidden");
   }
 }
 
 // Attach simple initializers to make sure pages update after load if needed
 document.addEventListener('DOMContentLoaded', ()=>{
-  console.log('DOM loaded');
-  // Render boards grid only if element present (safe)
-  try {
-    renderBoardsGrid();
-  } catch (err) {
-    console.error('Error while rendering boards grid on load:', err);
-  }
+  // nothing automatic here; pages render when navigated to
+  // but ensure if someone is already logged in in this session, boards grid renders appropriately
+  renderBoardsGrid();
 });
