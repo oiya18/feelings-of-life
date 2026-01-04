@@ -74,4 +74,68 @@ canvas {
   margin: 20px auto;
   background: #2a2a2a;
   border-radius: 10px;
+  display: block;
+}
+
+/* New styles for board management and inputs */
+.card {
+  background: rgba(255,255,255,0.03);
+  padding: 12px;
+  margin: 18px auto;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  text-align: left;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.board-item {
+  background: #2a2a2a;
+  padding: 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-item .title {
+  font-weight: bold;
+}
+
+.small-btn {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* inline input and eye button */
+.input-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+.eye-btn {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #3a3f45;
+  cursor: pointer;
+  border: none;
+  color: white;
 }
